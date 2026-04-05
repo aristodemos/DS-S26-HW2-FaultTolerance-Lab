@@ -1,4 +1,4 @@
-This is the second lab exercise on distributed systems.
+This is the second lab exercise on distributed systems for the course CSE_327 2026.
 The subject of the lab is fault tolerance.
 You are given a working implementation that needs improvement.
 
