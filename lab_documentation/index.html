@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Title</title>
+    <meta charset="utf-8">
+    <style>
+      @import url(https://fonts.googleapis.com/css?family=Yanone+Kaffeesatz);
+      @import url(https://fonts.googleapis.com/css?family=Droid+Serif:400,700,400italic);
+      @import url(https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic);
+
+      body { font-family: 'Droid Serif'; }
+      h1, h2, h3 {
+        font-family: 'Yanone Kaffeesatz';
+        font-weight: normal;
+      }
+      .remark-code, .remark-inline-code { font-family: 'Ubuntu Mono'; }
+    </style>
+  </head>
+  <body>
+    <textarea id="source">
+
+<!-- class: center, middle -->
+# 📄 1. Assignment Specification (Student Handout)
+
+## 🧪 Assignment: Break & Fix — Fault-Tolerant Distributed Task Queue
+
+### 🎯 Objective
+
+In this assignment, you will build a **distributed task queue** and evolve it from a **fragile single-node system** into a **fault-tolerant distributed service**.
+
+Your system must:
+
+* accept jobs via an HTTP API
+* process them asynchronously using worker nodes
+* survive failures (worker crash, leader crash)
+* ensure that **acknowledged jobs are not lost**
+
+---
+
+## 🏗️ System Overview
+
+Your system will consist of the following components:
+
+* **gateway** (HTTP entry point — used by the grader)
+* **queue nodes** (`queue1`, `queue2`)
+* **worker node(s)** (`worker1`, optional `worker2`)
+
+The instructor provides:
+
+* Docker Compose boilerplate
+* Worker boilerplate
+* Reset endpoint boilerplate
+* Grader (pytest-based)
+
+You implement:
+
+* queue logic
+* replication / coordination
+* fault tolerance
+
+---
+
+## 🌐 API Contract (MANDATORY)
+
+All systems must expose an HTTP API at:
+
+```
+http://localhost:${GATEWAY_PORT}
+```
+
+### 1. Submit Job
+
+```
+POST /jobs
+```
+
+**Request:**
+
+```json
+{
+  "operation": "square",
+  "value": 7
+}
+```
+
+**Response:**
+
+```json
+{
+  "job_id": "uuid"
+}
+```
+
+---
+
+### 2. Get Job Status
+
+```
+GET /jobs/<job_id>
+```
+
+**Response:**
+
+```json
+{
+  "job_id": "uuid",
+  "status": "PENDING | RUNNING | COMPLETED | FAILED",
+  "result": 49
+}
+```
+
+---
+
+### 3. Health Check
+
+```
+GET /health
+```
+
+**Response:**
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+### 4. Cluster Info
+
+```
+GET /cluster
+```
+
+**Response:**
+
+```json
+{
+  "leader": "queue1",
+  "nodes": ["queue1", "queue2"],
+  "workers": ["worker1"]
+}
+```
+
+---
+
+### 5. Reset (Provided)
+
+```
+POST /admin/reset
+```
+
+Resets system state between tests.
+
+---
+
+## ⚙️ Environment Configuration (.env)
+
+You must use a `.env` file.
+
+Example:
+
+```env
+GATEWAY_PORT=8080
+QUEUE_NODES=queue1,queue2
+WORKER_NODES=worker1
+```
+
+---
+
+## 🧩 Functional Requirements
+
+### Basic Functionality
+
+* Jobs can be submitted via the gateway
+* Workers process jobs asynchronously
+* Job status transitions correctly:
+
+  * PENDING → RUNNING → COMPLETED
+
+---
+
+### Fault Tolerance
+
+Your system must handle:
+
+#### 1. Worker Failure
+
+* If a worker crashes during execution:
+
+  * the job must eventually complete
+  * it must not be lost
+
+---
+
+#### 2. Queue Node Failure (Leader Failure)
+
+* If the leader node crashes:
+
+  * another node must take over
+  * previously accepted jobs must still exist
+  * system must continue processing
+
+---
+
+### Replication Requirement
+
+* Jobs must be replicated to at least one other node before being acknowledged
+
+---
+
+### Job Semantics
+
+* A job that is acknowledged must:
+
+  * **eventually reach a terminal state**
+  * **not disappear**
+* Final state must contain **at most one successful completion per job**
+
+---
+
+## 🐳 Docker Requirements
+
+You must support:
+
+```bash
+docker compose up --build -d
+```
+
+And your system must be reachable within **30 seconds**.
+
+---
+
+## 🧪 Grading
+
+You will be graded using an **automated pytest-based grader**.
+
+To test locally:
+
+```bash
+pytest grader/tests -v
+```
+
+---
+
+## 📦 Deliverables
+
+Your repository must include:
+
+* `docker-compose.yml`
+* `.env.example`
+* source code
+* `README.md`
+* compatibility with provided grader
+
+---
+
+<!-- ## 📊 Grading Breakdown
+
+| Category             | Points |
+| -------------------- | ------ |
+| Packaging & Docker   | 20     |
+| API Compliance       | 15     |
+| Basic Functionality  | 20     |
+| Fault Tolerance      | 25     |
+| Grader Compatibility | 10     |
+| Code Quality & Docs  | 10     |
+
+--- -->
+
+## 🚫 Constraints
+
+* Python only
+* HTTP API mandatory
+* Fixed service names required:
+
+  * `gateway`
+  * `queue1`, `queue2`
+  * `worker1`
+* Do NOT modify grader tests
+
+---
+
+---
+
+# 📘 2. Reference API Contract (Instructor Spec)
+
+This is your internal “source of truth” for grading.
+
+## Job Model
+
+```json
+{
+  "job_id": "string",
+  "operation": "square",
+  "value": 7,
+  "status": "PENDING | RUNNING | COMPLETED | FAILED",
+  "result": 49
+}
+```
+
+---
+
+## Supported Operations (MANDATORY)
+
+Keep this fixed:
+
+### square
+
+```
+input: integer
+output: integer^2
+```
+
+### sleep
+
+```
+input: { "duration": seconds, "value": X }
+output: X after delay
+```
+
+👉 `sleep` is critical for failure testing.
+
+---
+
+## Status Rules
+
+| State     | Meaning                  |
+| --------- | ------------------------ |
+| PENDING   | Accepted but not started |
+| RUNNING   | Assigned to worker       |
+| COMPLETED | Successfully finished    |
+| FAILED    | Terminal failure         |
+
+---
+
+## Timing Constraints
+
+* Job must complete within:
+
+  * normal job: 5 seconds
+  * sleep job: duration + 5 seconds buffer
+
+---
+
+## Failure Semantics
+
+### Required guarantees:
+
+* no acknowledged job is lost
+* eventual completion
+* system recovers after:
+
+  * 1 queue node failure
+  * 1 worker failure
+
+---
+
+## Leader Behavior (loosely defined)
+
+* exactly one leader at a time (best effort)
+* leader handles:
+
+  * job acceptance
+  * scheduling
+* follower(s):
+
+  * replicate state
+  * can take over
+
+Implementation is up to students.
+
+---
+
+---
+
+# 🧪 3. Pytest Grader Skeleton
+
+## 📁 Structure
+
+```text
+grader/
+├── requirements.txt
+├── pytest.ini
+├── conftest.py
+└── tests/
+    ├── test_00_boot.py
+    ├── test_01_basic.py
+    ├── test_02_multiple_jobs.py
+    ├── test_03_worker_failure.py
+    ├── test_04_leader_failure.py
+```
+
+---
+
+## requirements.txt
+
+```txt
+pytest
+requests
+tenacity
+```
+
+---
+
+## pytest.ini
+
+```ini
+[pytest]
+addopts = -v --tb=short
+timeout = 60
+```
+
+---
+
+## conftest.py (core utilities)
+
+```python
+import os
+import time
+import requests
+import subprocess
+from tenacity import retry, stop_after_attempt, wait_fixed
+
+BASE_URL = f"http://localhost:{os.getenv('GATEWAY_PORT', '8080')}"
+
+@retry(stop=stop_after_attempt(20), wait=wait_fixed(2))
+def wait_for_system():
+    r = requests.get(f"{BASE_URL}/health")
+    assert r.status_code == 200
+
+
+def submit_job(payload):
+    r = requests.post(f"{BASE_URL}/jobs", json=payload)
+    assert r.status_code == 200
+    return r.json()["job_id"]
+
+
+def get_job(job_id):
+    return requests.get(f"{BASE_URL}/jobs/{job_id}").json()
+
+
+def wait_for_completion(job_id, timeout=20):
+    start = time.time()
+    while time.time() - start < timeout:
+        job = get_job(job_id)
+        if job["status"] == "COMPLETED":
+            return job
+        time.sleep(1)
+    raise TimeoutError("Job did not complete")
+
+
+def kill_service(name):
+    subprocess.run(["docker", "compose", "kill", name])
+
+
+def restart_service(name):
+    subprocess.run(["docker", "compose", "up", "-d", name])
+
+
+def reset_system():
+    requests.post(f"{BASE_URL}/admin/reset")
+```
+
+---
+
+## test_00_boot.py
+
+```python
+def test_system_boot():
+    from conftest import wait_for_system
+    wait_for_system()
+```
+
+---
+
+## test_01_basic.py
+
+```python
+def test_single_job():
+    from conftest import submit_job, wait_for_completion
+
+    job_id = submit_job({"operation": "square", "value": 5})
+    job = wait_for_completion(job_id)
+
+    assert job["result"] == 25
+```
+
+---
+
+## test_02_multiple_jobs.py
+
+```python
+def test_multiple_jobs():
+    from conftest import submit_job, wait_for_completion
+
+    jobs = [submit_job({"operation": "square", "value": i}) for i in range(5)]
+
+    results = [wait_for_completion(j) for j in jobs]
+
+    assert len(results) == 5
+```
+
+---
+
+## test_03_worker_failure.py
+
+```python
+def test_worker_failure_recovery():
+    from conftest import submit_job, wait_for_completion, kill_service, restart_service
+
+    job_id = submit_job({
+        "operation": "sleep",
+        "value": 42,
+        "duration": 5
+    })
+
+    time.sleep(2)
+    kill_service("worker1")
+
+    time.sleep(2)
+    restart_service("worker1")
+
+    job = wait_for_completion(job_id, timeout=30)
+
+    assert job["result"] == 42
+```
+
+---
+
+## test_04_leader_failure.py
+
+```python
+def test_leader_failover():
+    from conftest import submit_job, wait_for_completion, kill_service
+
+    job_id = submit_job({"operation": "square", "value": 9})
+
+    time.sleep(1)
+    kill_service("queue1")
+
+    job = wait_for_completion(job_id, timeout=30)
+
+    assert job["result"] == 81
+```
+
+
+
+    </textarea>
+    <script src="https://remarkjs.com/downloads/remark-latest.min.js">
+    </script>
+    <script>
+      var slideshow = remark.create();
+    </script>
+  </body>
+</html>

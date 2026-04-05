@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  gateway:
+    build: ./gateway
+    container_name: gateway
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    env_file:
+      - .env
+    depends_on:
+      - queue1
+      - queue2
+
+  queue1:
+    build: ./queue_service
+    container_name: queue1
+    env_file:
+      - .env
+    environment:
+      - NODE_NAME=queue1
+      - PEER_NAME=queue2
+      - PORT=${QUEUE_PORT:-5000}
+    ports:
+      - "5001:5000"
+
+  queue2:
+    build: ./queue_service
+    container_name: queue2
+    env_file:
+      - .env
+    environment:
+      - NODE_NAME=queue2
+      - PEER_NAME=queue1
+      - PORT=${QUEUE_PORT:-5000}
+    ports:
+      - "5002:5000"
+
+  worker1:
+    build: ./worker
+    container_name: worker1
+    env_file:
+      - .env
+    environment:
+      - WORKER_ID=worker1
+    depends_on:
+      - queue1
+      - queue2
